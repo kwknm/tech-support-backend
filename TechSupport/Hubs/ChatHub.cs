@@ -1,9 +1,7 @@
 ﻿using System.Security.Claims;
-using MapsterMapper;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
-using TechSupport.Contracts.Responses;
 using TechSupport.Database;
 using TechSupport.Database.Entities;
 using TechSupport.Services;

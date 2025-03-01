@@ -6,6 +6,7 @@ project.lock.json
 nupkg/
 
 TechSupport/Migrations/
+TechSupport/*.db
 
 # Visual Studio Code
 .vscode/*

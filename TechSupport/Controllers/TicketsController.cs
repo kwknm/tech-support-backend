@@ -226,6 +226,7 @@ public class TicketsController : ControllerBase
         }
 
         ticket.Status = TicketStatus.Completed;
+        ticket.ClosedAt = DateTimeOffset.UtcNow;
         await _context.SaveChangesAsync();
 
         await _notificationService.SendNotificationAsync(ticket.IssuerId, NotificationTypeEnum.TicketStatusChange,
@@ -257,6 +258,7 @@ public class TicketsController : ControllerBase
         }
 
         ticket.Status = TicketStatus.Cancelled;
+        ticket.ClosedAt = DateTimeOffset.UtcNow;
         await _context.SaveChangesAsync();
 
         await _notificationService.SendNotificationAsync(ticket.IssuerId, NotificationTypeEnum.TicketStatusChange,

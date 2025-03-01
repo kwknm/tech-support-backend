@@ -13,6 +13,7 @@ public record TicketResponse(
     UserResponse Support,
     Guid ChatId,
     DateTimeOffset CreatedAt,
+    DateTimeOffset? ClosedAt,
     Guid? AttachmentId,
     AttachmentResponse? Attachment,
     bool IsClosed,

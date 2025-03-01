@@ -24,6 +24,7 @@ public class Ticket
     public Guid ChatId { get; set; }
     public Chat Chat { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset? ClosedAt { get; set; }
     public Guid? AttachmentId { get; set; }
     public Attachment? Attachment { get; set; }
     [NotMapped] public bool IsClosed => Status is TicketStatus.Completed or TicketStatus.Cancelled;
