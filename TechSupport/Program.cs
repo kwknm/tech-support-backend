@@ -27,7 +27,6 @@ builder.Services.AddCors(x =>
         });
 });
 
-
 var jwtIssuer = builder.Configuration.GetSection("Jwt:Issuer").Get<string>();
 var jwtAudience = builder.Configuration.GetSection("Jwt:Audience").Get<string>();
 var jwtKey = builder.Configuration.GetSection("Jwt:Key").Get<string>();
@@ -53,6 +52,7 @@ builder.Services.AddAuthentication(options =>
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
         };
         
+        // Нужно для парсинга access_token для SignalR авторизации
         o.Events = new JwtBearerEvents
         {
             OnMessageReceived = context =>
@@ -72,7 +72,7 @@ builder.Services.AddAuthentication(options =>
 
 builder.Services.AddDbContext<ApplicationDbContext>(x =>
 {
-    x.UseSqlite(builder.Configuration.GetConnectionString("Sqlite"));
+    x.UseNpgsql(builder.Configuration.GetConnectionString("PostgresLocal"));
 });
 
 builder.Services.AddIdentity<User, IdentityRole>()

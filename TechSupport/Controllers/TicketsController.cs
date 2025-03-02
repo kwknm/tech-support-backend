@@ -83,15 +83,15 @@ public class TicketsController : ControllerBase
         return Ok(issueTypes);
     }
 
-    [HttpPost("issues")]
-    public async Task<IActionResult> CreateIssueTypeAsync([FromBody] string name)
+    [HttpPost("issues"), Authorize(Roles = RolesEnum.Support, AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
+    public async Task<IActionResult> CreateIssueTypeAsync([FromBody] CreateIssueRequest request)
     {
-        if (await _context.IssueTypes.FirstOrDefaultAsync(x => x.Name == name) is not null)
+        if (await _context.IssueTypes.FirstOrDefaultAsync(x => x.Name == request.Name) is not null)
         {
             return BadRequest(new { Message = "Такой тип проблемы уже есть в системе" });
         }
 
-        var newIssueType = new IssueType { Name = name };
+        var newIssueType = new IssueType { Name = request.Name };
         var entry = await _context.IssueTypes.AddAsync(newIssueType);
         await _context.SaveChangesAsync();
         return Created($"/api/tickets/issues", new { IssueId = entry.Entity.Id });
