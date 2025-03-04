@@ -18,6 +18,7 @@ public class Ticket
     public string Title { get; set; }
     public string Description { get; set; }
     public TicketStatus Status { get; set; }
+    public Guid IssueTypeId { get; set; }
     public IssueType IssueType { get; set; }
     public string? SupportId { get; set; }
     public User? Support { get; set; }

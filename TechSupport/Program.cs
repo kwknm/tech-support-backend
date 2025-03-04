@@ -1,7 +1,9 @@
 using System.Text;
+using FluentValidation;
 using Mapster;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using TechSupport.Database;
@@ -12,19 +14,22 @@ using TechSupport.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddControllers();
+builder.Services.AddControllers(x => x.ModelValidatorProviders.Clear());
+builder.Services.AddValidatorsFromAssembly(typeof(Program).Assembly);
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddSignalR();
 builder.Services.AddMapster();
 
+builder.Services.Configure<ApiBehaviorOptions>(options => { options.SuppressModelStateInvalidFilter = true; });
+
 builder.Services.AddCors(x =>
 {
-    x.AddPolicy("ApiCorsPolicy",
-        c =>
-        {
-            c.WithOrigins("http://localhost:8080", "http://localhost:8081").AllowAnyHeader().AllowAnyMethod().AllowCredentials();
-        });
+    x.AddDefaultPolicy(c =>
+    {
+        c.WithOrigins("http://localhost:8080", "http://localhost:8081").AllowAnyHeader().AllowAnyMethod()
+            .AllowCredentials();
+    });
 });
 
 var jwtIssuer = builder.Configuration.GetSection("Jwt:Issuer").Get<string>();
@@ -51,7 +56,7 @@ builder.Services.AddAuthentication(options =>
             ValidAudience = jwtAudience,
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
         };
-        
+
         // Нужно для парсинга access_token для SignalR авторизации
         o.Events = new JwtBearerEvents
         {
@@ -64,7 +69,7 @@ builder.Services.AddAuthentication(options =>
                 {
                     context.Token = accessToken;
                 }
-                
+
                 return Task.CompletedTask;
             }
         };
@@ -88,6 +93,7 @@ builder.Services.Configure<IdentityOptions>(options =>
     options.Password.RequireUppercase = false;
     options.Password.RequiredLength = 3;
     options.Password.RequiredUniqueChars = 0;
+    options.User.RequireUniqueEmail = true;
 });
 
 builder.Services.AddScoped<ITokenService, TokenService>();
@@ -107,12 +113,13 @@ if (app.Environment.IsDevelopment())
 
 await app.SeedDatabase();
 
-app.UseCors("ApiCorsPolicy");
+app.UseCors();
 
 // app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
+
 
 app.MapHub<ChatHub>("/hubs/chat");
 app.MapHub<NotificationHub>("/hubs/notifications");

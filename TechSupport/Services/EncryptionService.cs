@@ -12,7 +12,7 @@ public class EncryptionService : IEncryptionService
         _configuration = configuration;
     }
 
-    public string AesEncrypt(string text)
+    public string Encrypt(string text)
     {
         
         using var aes = Aes.Create();
@@ -29,7 +29,7 @@ public class EncryptionService : IEncryptionService
         return Convert.ToBase64String(encryptedBytes);
     }
 
-    public string AesDecrypt(string cipherText)
+    public string Decrypt(string cipherText)
     {
         var cipherBytes = Convert.FromBase64String(cipherText);
         using var aes = Aes.Create();

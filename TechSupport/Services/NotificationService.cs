@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using TechSupport.Contracts.Responses;
 using TechSupport.Database;
 using TechSupport.Database.Entities;
 using TechSupport.Hubs;
@@ -11,13 +12,14 @@ public class NotificationService : INotificationService
     private readonly IHubContext<NotificationHub, INotificationHub> _notificationHub;
     private readonly ApplicationDbContext _context;
 
-    public NotificationService(IHubContext<NotificationHub, INotificationHub> notificationHub, ApplicationDbContext context)
+    public NotificationService(IHubContext<NotificationHub, INotificationHub> notificationHub,
+        ApplicationDbContext context)
     {
         _notificationHub = notificationHub;
         _context = context;
     }
 
-    public async Task SendNotificationAsync(string userId, string type, string title, string body, Metadata metadata )
+    public async Task SendNotificationAsync(string userId, string type, string title, string body, Metadata metadata)
     {
         var notification = new Notification
         {
@@ -33,16 +35,18 @@ public class NotificationService : INotificationService
         var createdEntry = await _context.Notifications.AddAsync(notification);
         await _context.SaveChangesAsync();
 
+        var response = new ReceiveNotificationResponse(createdEntry.Entity.Id, createdEntry.Entity.IsRead,
+            createdEntry.Entity.RecipientId, type, title, body,
+            DateTimeOffset.UtcNow,
+            metadata);
+
         await _notificationHub.Clients.User(userId)
-            .ReceiveNotification(createdEntry.Entity.Id, createdEntry.Entity.IsRead,
-                createdEntry.Entity.RecipientId, type, title, body,
-                DateTimeOffset.UtcNow,
-                metadata);
+            .ReceiveNotification(response);
     }
 
     public async Task<IList<Notification>> GetUserNotificationsAsync(string userId)
     {
-        return await _context.Notifications.Where(x => x.RecipientId == userId)
+        return await _context.Notifications.AsNoTracking().Where(x => x.RecipientId == userId)
             .Include(x => x.Metadata).ToListAsync();
     }
 

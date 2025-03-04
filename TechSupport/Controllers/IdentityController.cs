@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Authentication.JwtBearer;
+﻿using FluentValidation;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -18,7 +19,8 @@ public class IdentityController : ControllerBase
     private readonly SignInManager<User> _signInManager;
     private readonly ITokenService _tokenService;
 
-    public IdentityController(UserManager<User> userManager, SignInManager<User> signInManager, ITokenService tokenService)
+    public IdentityController(UserManager<User> userManager, SignInManager<User> signInManager,
+        ITokenService tokenService)
     {
         _userManager = userManager;
         _signInManager = signInManager;
@@ -26,8 +28,12 @@ public class IdentityController : ControllerBase
     }
 
     [HttpPost("[action]")]
-    public async Task<IActionResult> Register(SignUpRequest request)
+    public async Task<IActionResult> Register(SignUpRequest request, [FromServices] IValidator<SignUpRequest> validator)
     {
+        var validationResult = await validator.ValidateAsync(request);
+        if (!validationResult.IsValid)
+            return BadRequest(new { Errors = validationResult.ToDictionary().Values });
+
         var user = new User
         {
             Email = request.Email,
@@ -37,9 +43,9 @@ public class IdentityController : ControllerBase
         };
 
         var result = await _userManager.CreateAsync(user, request.Password);
-        if (!result.Succeeded) 
-            return BadRequest(result.Errors);
-        
+        if (!result.Succeeded)
+            return BadRequest(new { Errors = result.Errors.ToList()});
+
         var roles = await _userManager.GetRolesAsync(user);
         var token = _tokenService.GenerateToken(user.Id, user.Email, roles, user.FirstName, user.LastName);
         return Ok(new { access_token = token });
@@ -51,16 +57,16 @@ public class IdentityController : ControllerBase
         var user = await _userManager.FindByEmailAsync(request.Email);
         if (user == null)
             return BadRequest(new { Message = "Неверный логин или пароль" });
-        
+
         var result = await _signInManager.CheckPasswordSignInAsync(user, request.Password, false);
         if (!result.Succeeded)
             return BadRequest(new { Message = "Неверный логин или пароль" });
-        
+
         var roles = await _userManager.GetRolesAsync(user);
         var token = _tokenService.GenerateToken(user.Id, user.Email, roles, user.FirstName, user.LastName);
         return Ok(new { access_token = token });
     }
-    
+
     [HttpGet("[action]"), Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
     public async Task<IActionResult> Me()
     {
@@ -85,7 +91,7 @@ public class IdentityController : ControllerBase
         var user = await _userManager.GetUserAsync(User);
         if (user == null)
             return BadRequest();
-        
+
         await _userManager.AddToRoleAsync(user, RolesEnum.Support);
         return Ok(await _userManager.GetRolesAsync(user));
     }

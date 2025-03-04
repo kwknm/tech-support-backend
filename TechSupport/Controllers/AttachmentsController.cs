@@ -36,8 +36,8 @@ public class AttachmentsController : ControllerBase
         if (attachment is null)
             return BadRequest();
         
-        if (attachment.Length > 5 * 1024 * 1024)
-            return BadRequest(new { Message = "Размер вложения не может быть больше 5 Мб" });
+        if (attachment.Length > 10 * 1024 * 1024)
+            return BadRequest(new { Message = "Размер вложения не может быть больше 10 Мб" });
         
         var attachmentId = await _attachmentService.UploadAttachmentAsync(attachment);
 

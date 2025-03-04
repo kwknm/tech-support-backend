@@ -1,4 +1,5 @@
 ﻿using System.Security.Claims;
+using FluentValidation;
 using MapsterMapper;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
@@ -20,20 +21,20 @@ public class TicketsController : ControllerBase
     private readonly ApplicationDbContext _context;
     private readonly UserManager<User> _userManager;
     private readonly IMapper _mapper;
-    private readonly IEncryptionService _encryptionService;
     private readonly INotificationService _notificationService;
     private readonly IAttachmentService _attachmentService;
+    private readonly IChatService _chatService;
 
     public TicketsController(ApplicationDbContext context, UserManager<User> userManager, IMapper mapper,
-        IEncryptionService encryptionService, INotificationService notificationService,
-        IAttachmentService attachmentService)
+        INotificationService notificationService,
+        IAttachmentService attachmentService, IChatService chatService)
     {
         _context = context;
         _userManager = userManager;
         _mapper = mapper;
-        _encryptionService = encryptionService;
         _notificationService = notificationService;
         _attachmentService = attachmentService;
+        _chatService = chatService;
     }
 
     [HttpGet("{id:int}")]
@@ -44,34 +45,28 @@ public class TicketsController : ControllerBase
             .Include(x => x.Support)
             .Include(x => x.Issuer)
             .Include(x => x.Attachment)
+            .AsNoTracking()
             .FirstOrDefaultAsync(x => x.Id == id);
         return result is not null ? Ok(_mapper.Map<TicketResponse>(result)) : NotFound();
     }
 
     [HttpGet]
-    public async Task<IActionResult> GetTicketsAsync([FromQuery] string? userId, [FromQuery] int? statusId, [FromQuery] string? supportId)
+    public async Task<IActionResult> GetTicketsAsync([FromQuery] string? userId, [FromQuery] int? statusId,
+        [FromQuery] string? supportId)
     {
         var result = _context.Tickets
             .Include(x => x.IssueType)
             .Include(x => x.Issuer)
             .Include(x => x.Support)
             .OrderByDescending(x => x.Id)
+            .AsNoTracking()
             .AsQueryable();
 
-        if (userId is not null)
-        {
-            result = result.Where(x => x.IssuerId == userId);
-        }
+        if (userId is not null) result = result.Where(x => x.IssuerId == userId);
 
-        if (statusId is not null)
-        {
-            result = result.Where(x => x.Status == (TicketStatus)statusId);
-        }
-        
-        if (supportId is not null)
-        {
-            result = result.Where(x => x.SupportId == supportId);
-        }
+        if (statusId is not null) result = result.Where(x => x.Status == (TicketStatus)statusId);
+
+        if (supportId is not null) result = result.Where(x => x.SupportId == supportId);
 
         return Ok(_mapper.Map<List<TicketResponse>>(await result.ToListAsync()));
     }
@@ -79,14 +74,15 @@ public class TicketsController : ControllerBase
     [HttpGet("issues")]
     public async Task<IActionResult> GetIssueTypesAsync()
     {
-        var issueTypes = await _context.IssueTypes.ToListAsync();
+        var issueTypes = await _context.IssueTypes.AsNoTracking().ToListAsync();
         return Ok(issueTypes);
     }
 
-    [HttpPost("issues"), Authorize(Roles = RolesEnum.Support, AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
+    [HttpPost("issues"),
+     Authorize(Roles = RolesEnum.Support, AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
     public async Task<IActionResult> CreateIssueTypeAsync([FromBody] CreateIssueRequest request)
     {
-        if (await _context.IssueTypes.FirstOrDefaultAsync(x => x.Name == request.Name) is not null)
+        if (await _context.IssueTypes.AsNoTracking().AnyAsync(x => x.Name == request.Name))
         {
             return BadRequest(new { Message = "Такой тип проблемы уже есть в системе" });
         }
@@ -98,23 +94,18 @@ public class TicketsController : ControllerBase
     }
 
     [HttpPost, Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
-    public async Task<IActionResult> CreateAsync([FromForm] CreateTicketRequest request)
+    public async Task<IActionResult> CreateAsync([FromForm] CreateTicketRequest request,
+        [FromServices] IValidator<CreateTicketRequest> validator)
     {
-        var user = await _userManager.GetUserAsync(User);
-        if (user is null)
-        {
-            return Unauthorized();
-        }
+        var result = await validator.ValidateAsync(request);
+        if (!result.IsValid)
+            return BadRequest(new { Errors = result.ToDictionary().Values });
 
-        var issueType = await _context.IssueTypes.FindAsync(request.IssueTypeId);
-        if (issueType is null)
-        {
-            return BadRequest(new { Message = "Недопустимый тип проблемы" });
-        }
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)!.Value;
 
         var chat = (await _context.Chats.AddAsync(new Chat
         {
-            IssuerId = user.Id
+            IssuerId = userId
         })).Entity;
         await _context.SaveChangesAsync();
 
@@ -123,16 +114,16 @@ public class TicketsController : ControllerBase
             Title = request.Title,
             Description = request.Description,
             Status = TicketStatus.Registered,
-            IssuerId = user.Id,
+            IssuerId = userId,
             Chat = chat,
-            IssueType = issueType,
+            IssueTypeId = request.IssueTypeId,
             CreatedAt = DateTimeOffset.UtcNow
         };
 
         if (request.Attachment is not null)
         {
-            if (request.Attachment.Length > 5 * 1024 * 1024)
-                return BadRequest(new { Message = "Размер вложения не может быть больше 5 Мб" });
+            if (request.Attachment.Length > 10 * 1024 * 1024)
+                return BadRequest(new { Message = "Размер вложения не может быть больше 10 Мб" });
             var attachmentId = await _attachmentService.UploadAttachmentAsync(request.Attachment);
             newTicket.AttachmentId = attachmentId;
         }
@@ -149,14 +140,10 @@ public class TicketsController : ControllerBase
     {
         var ticket = await _context.Tickets.FirstOrDefaultAsync(x => x.Id == id);
         if (ticket is null)
-        {
             return BadRequest(new { Message = "Заявка не найдена" });
-        }
 
         if (ticket.SupportId is not null)
-        {
             return BadRequest(new { Message = "Заявка уже занята сотрудником поддержки" });
-        }
 
         var support = await _userManager.GetUserAsync(User);
         var chat = await _context.Chats.FindAsync(ticket.ChatId);
@@ -165,11 +152,11 @@ public class TicketsController : ControllerBase
         ticket.Status = TicketStatus.InProgress;
         ticket.Support = support;
         await _context.SaveChangesAsync();
-        
+
         await _notificationService.SendNotificationAsync(ticket.IssuerId, NotificationTypeEnum.TicketStatusChange,
             $"Статус вашей заявки #{ticket.Id} изменился",
             "Ваша заявка была принята на рассмотрение", new Metadata { ResourceId = ticket.Id.ToString() });
-        
+
         return Ok();
     }
 
@@ -177,30 +164,17 @@ public class TicketsController : ControllerBase
     public async Task<IActionResult> GetMessagesAsync(int id)
     {
         var ticket = await _context.Tickets
+            .AsNoTracking()
             .FirstOrDefaultAsync(x => x.Id == id);
         if (ticket is null)
-        {
             return BadRequest(new { Message = "Заявка не найдена" });
-        }
-
-        var messages = await _context.Messages.Where(x => x.ChatId == ticket.ChatId)
-            .Include(x => x.User)
-            .Include(x => x.Attachment)
-            .ToListAsync();
 
         var currentUserId = User.FindFirst(ClaimTypes.NameIdentifier)!.Value;
 
         if (ticket.SupportId != currentUserId && ticket.IssuerId != currentUserId)
             return Forbid();
 
-        var mapped = _mapper.Map<List<MessageResponse>>(messages).Select(msg =>
-        {
-            var decryptedMessage = _encryptionService.AesDecrypt(msg.Content);
-            return msg with
-            {
-                Content = decryptedMessage
-            };
-        });
+        var mapped = _mapper.Map<List<MessageResponse>>(await _chatService.GetMessagesAsync(ticket.ChatId));
         return Ok(mapped);
     }
 
@@ -208,62 +182,37 @@ public class TicketsController : ControllerBase
      Authorize(Roles = RolesEnum.Support, AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
     public async Task<IActionResult> CloseTicketAsync(int id)
     {
-        var ticket = await _context.Tickets
-            .FirstOrDefaultAsync(x => x.Id == id);
-        if (ticket is null)
-        {
-            return BadRequest(new { Message = "Заявка не найдена" });
-        }
-
-        if (ticket.Status != TicketStatus.InProgress)
-        {
-            return BadRequest(new { Message = "Заявка должна быть на рассмотрении перед закрытием" });
-        }
-
-        if (ticket.SupportId != User.FindFirst(x => x.Type == ClaimTypes.NameIdentifier)!.Value)
-        {
-            return BadRequest(new { Message = "Вы не рассматриваете эту заявку" });
-        }
-
-        ticket.Status = TicketStatus.Completed;
-        ticket.ClosedAt = DateTimeOffset.UtcNow;
-        await _context.SaveChangesAsync();
-
-        await _notificationService.SendNotificationAsync(ticket.IssuerId, NotificationTypeEnum.TicketStatusChange,
-            $"Статус вашей заявки #{ticket.Id} изменился",
-            "Ваша заявка была закрыта", new Metadata { ResourceId = ticket.Id.ToString() });
-
-        return Ok();
+        return await UpdateTicketStatusAsync(id, TicketStatus.Completed, "Ваша заявка была закрыта");
     }
 
     [HttpPost("{id:int}/reject"),
      Authorize(Roles = RolesEnum.Support, AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
     public async Task<IActionResult> RejectTicketAsync(int id)
     {
+        return await UpdateTicketStatusAsync(id, TicketStatus.Cancelled, "Ваша заявка была отклонена");
+    }
+
+    private async Task<IActionResult> UpdateTicketStatusAsync(int ticketId, TicketStatus newStatus,
+        string successMessage)
+    {
         var ticket = await _context.Tickets
-            .FirstOrDefaultAsync(x => x.Id == id);
+            .FirstOrDefaultAsync(x => x.Id == ticketId);
         if (ticket is null)
-        {
             return BadRequest(new { Message = "Заявка не найдена" });
-        }
 
         if (ticket.Status != TicketStatus.InProgress)
-        {
-            return BadRequest(new { Message = "Заявка должна быть на рассмотрении перед отклонением" });
-        }
+            return BadRequest(new { Message = "Заявка должна быть на рассмотрении перед изменением статуса" });
 
         if (ticket.SupportId != User.FindFirst(x => x.Type == ClaimTypes.NameIdentifier)!.Value)
-        {
             return BadRequest(new { Message = "Вы не рассматриваете эту заявку" });
-        }
 
-        ticket.Status = TicketStatus.Cancelled;
+        ticket.Status = newStatus;
         ticket.ClosedAt = DateTimeOffset.UtcNow;
         await _context.SaveChangesAsync();
 
         await _notificationService.SendNotificationAsync(ticket.IssuerId, NotificationTypeEnum.TicketStatusChange,
             $"Статус вашей заявки #{ticket.Id} изменился",
-            "Ваша заявка была отклонена", new Metadata { ResourceId = ticket.Id.ToString() });
+            successMessage, new Metadata { ResourceId = ticket.Id.ToString() });
 
         return Ok();
     }
