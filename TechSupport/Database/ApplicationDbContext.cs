@@ -21,4 +21,5 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     public DbSet<Message> Messages { get; set; }
     public DbSet<Notification> Notifications { get; set; }
     public DbSet<Metadata> Metadatas { get; set; }
+    public DbSet<Faq> Faqs { get; set; }
 };
