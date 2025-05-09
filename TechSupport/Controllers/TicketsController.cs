@@ -93,6 +93,21 @@ public class TicketsController : ControllerBase
         return Created($"/api/tickets/issues", new { IssueId = entry.Entity.Id });
     }
 
+    [HttpDelete("issues/{id:guid}"),
+     Authorize(Roles = RolesEnum.Support, AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
+    public async Task<IActionResult> DeleteIssueTypeAsync(Guid id)
+    {
+        var issueType = await _context.IssueTypes.FindAsync(id);
+        if (issueType is null)
+        {
+            return NoContent();
+        }
+
+        _context.IssueTypes.Remove(issueType);
+        await _context.SaveChangesAsync();
+        return NoContent();
+    }
+
     [HttpPost, Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
     public async Task<IActionResult> CreateAsync([FromForm] CreateTicketRequest request,
         [FromServices] IValidator<CreateTicketRequest> validator)
@@ -112,7 +127,7 @@ public class TicketsController : ControllerBase
         var newTicket = new Ticket
         {
             Title = request.Title,
-            Description = request.Description,
+            Description = request.Description.Trim(),
             Status = TicketStatus.Registered,
             IssuerId = userId,
             Chat = chat,
@@ -214,6 +229,32 @@ public class TicketsController : ControllerBase
             $"Статус вашей заявки #{ticket.Id} изменился",
             successMessage, new Metadata { ResourceId = ticket.Id.ToString() });
 
+        return Ok();
+    }
+
+    [HttpPatch("{id:int}"), Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
+    public async Task<IActionResult> UpdateTicketAsync(int id, UpdateTicketRequest request)
+    {
+        var userId = User.FindFirst(x => x.Type == ClaimTypes.NameIdentifier)!.Value;
+
+        var ticket = await _context.Tickets.FindAsync(id);
+
+        if (ticket is null)
+        {
+            return NotFound(new { Message = "Заявка не найдена" });
+        }
+
+        if (ticket.IssuerId != userId)
+        {
+            return Forbid();
+        }
+
+        if (request.Description is not null)
+        {
+            ticket.Description = request.Description.Trim();
+        }
+
+        await _context.SaveChangesAsync();
         return Ok();
     }
 }

@@ -9,4 +9,5 @@ public class Faq
     public User Author { get; set; }
     public DateTimeOffset? EditedAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
+    public IList<string> Likes { get; set; } = [];
 }

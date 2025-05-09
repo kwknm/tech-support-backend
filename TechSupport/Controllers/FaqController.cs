@@ -1,9 +1,12 @@
 ﻿using System.Security.Claims;
+using Mapster;
+using MapsterMapper;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using TechSupport.Contracts.Requests;
+using TechSupport.Contracts.Responses;
 using TechSupport.Database;
 using TechSupport.Database.Entities;
 
@@ -14,22 +17,23 @@ namespace TechSupport.Controllers;
 public class FaqController : ControllerBase
 {
     private readonly ApplicationDbContext _context;
+    private readonly IMapper _mapper;
 
-    public FaqController(ApplicationDbContext context)
+    public FaqController(ApplicationDbContext context, IMapper mapper)
     {
         _context = context;
+        _mapper = mapper;
     }
 
     [HttpGet]
     public async Task<IActionResult> GetFaqsAsync([FromQuery] string? search)
     {
-        // todo mapper all outputs
         var faqs = search is null
-            ? await _context.Faqs.AsNoTracking().ToListAsync()
-            : await _context.Faqs.AsNoTracking().Where(x => 
+            ? await _context.Faqs.AsNoTracking().Include(x => x.Author).OrderBy(x => x.Id).ToListAsync()
+            : await _context.Faqs.AsNoTracking().Include(x => x.Author).OrderBy(x => x.Id).Where(x =>
                 x.Title.ToLower().Contains(search.ToLower())).ToListAsync();
 
-        return Ok(faqs);
+        return Ok(_mapper.Map<List<FaqResponse>>(faqs));
     }
 
     [HttpGet("{id:int}")]
@@ -56,5 +60,27 @@ public class FaqController : ControllerBase
         await _context.SaveChangesAsync();
 
         return Ok(new { entry.Entity.Id });
+    }
+
+    [HttpPost("{id:int}/like/toggle"), Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
+    public async Task<IActionResult> ToggleLikeFaqAsync(int id)
+    {
+        var faq = await _context.Faqs.FindAsync(id);
+
+        if (faq is null)
+        {
+            return NotFound(new { Message = "Запись не найдена" });
+        }
+
+        var currentUserId = User.FindFirst(ClaimTypes.NameIdentifier)!.Value;
+
+        if (!faq.Likes.Remove(currentUserId))
+        {
+            faq.Likes.Add(currentUserId);
+        }
+
+        await _context.SaveChangesAsync();
+
+        return Ok(new { Likes = faq.Likes.Count });
     }
 }
