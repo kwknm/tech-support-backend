@@ -242,7 +242,7 @@ public class TicketsController : ControllerBase
         if (ticket is null)
         {
             return NotFound(new { Message = "Заявка не найдена" });
-        }
+        }    
 
         if (ticket.IssuerId != userId)
         {
@@ -254,6 +254,7 @@ public class TicketsController : ControllerBase
             ticket.Description = request.Description.Trim();
         }
 
+        ticket.EditedAt = DateTimeOffset.UtcNow;
         await _context.SaveChangesAsync();
         return Ok();
     }

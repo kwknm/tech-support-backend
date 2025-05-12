@@ -65,7 +65,7 @@ public class FaqController : ControllerBase
     [HttpPost("{id:int}/like/toggle"), Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
     public async Task<IActionResult> ToggleLikeFaqAsync(int id)
     {
-        var faq = await _context.Faqs.FindAsync(id);
+        var faq = await _context.Faqs.FindAsync(id); // todo: check warnings
 
         if (faq is null)
         {
@@ -82,5 +82,43 @@ public class FaqController : ControllerBase
         await _context.SaveChangesAsync();
 
         return Ok(new { Likes = faq.Likes.Count });
+    }
+
+    [HttpPatch("{id:int}"),
+     Authorize(Roles = RolesEnum.Support, AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
+    public async Task<IActionResult> UpdateFaqAsync(int id, UpdateFaqRequest request)
+    {
+        var userId = User.FindFirst(x => x.Type == ClaimTypes.NameIdentifier)!.Value;
+
+        var faq = await _context.Faqs.FindAsync(id);
+
+        if (faq is null)
+        {
+            return NotFound(new { Message = "Элемент не найден" });
+        }
+
+        if (request.Description is not null)
+        {
+            faq.Content = request.Description.Trim();
+        }
+
+        faq.EditedAt = DateTimeOffset.UtcNow;
+        await _context.SaveChangesAsync();
+        return Ok();
+    }
+
+    [HttpDelete("{id:int}"),
+     Authorize(Roles = RolesEnum.Support, AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
+    public async Task<IActionResult> DeleteFaqAsync(int id)
+    {
+        var faq = await _context.Faqs.FindAsync(id);
+        if (faq is null)
+        {
+            return NoContent();
+        }
+
+        _context.Faqs.Remove(faq);
+        await _context.SaveChangesAsync();
+        return NoContent();
     }
 }
