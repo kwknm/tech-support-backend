@@ -31,7 +31,8 @@ public class FaqController : ControllerBase
         var faqs = search is null
             ? await _context.Faqs.AsNoTracking().Include(x => x.Author).OrderBy(x => x.Id).ToListAsync()
             : await _context.Faqs.AsNoTracking().Include(x => x.Author).OrderBy(x => x.Id).Where(x =>
-                x.Title.ToLower().Contains(search.ToLower())).ToListAsync();
+                    x.Title.ToLower().Contains(search.ToLower()) || x.Content.ToLower().Contains(search.ToLower()))
+                .ToListAsync();
 
         return Ok(_mapper.Map<List<FaqResponse>>(faqs));
     }
